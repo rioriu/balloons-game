@@ -1,0 +1,145 @@
+:root {
+  --bg-top: #9de7ff;
+  --bg-bottom: #d8f7ff;
+  --card: #ffffffee;
+  --text: #24485c;
+  --accent: #ff8fc9;
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  touch-action: none;
+}
+
+body {
+  font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
+  color: var(--text);
+  background: linear-gradient(to bottom, var(--bg-top), var(--bg-bottom));
+}
+
+.app {
+  width: 100%;
+  height: 100%;
+  padding: env(safe-area-inset-top) 12px env(safe-area-inset-bottom);
+}
+
+.screen {
+  display: none;
+  width: 100%;
+  height: 100%;
+}
+
+.screen.active {
+  display: flex;
+  flex-direction: column;
+}
+
+#start-screen,
+#result-screen {
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 14px;
+  padding: 20px;
+}
+
+h1,
+h2 {
+  margin: 0;
+  color: #ff5d95;
+  text-shadow: 2px 2px #fff;
+}
+
+.subtitle,
+.result-score,
+#result-message {
+  margin: 0;
+}
+
+.rule-list {
+  list-style: none;
+  margin: 4px 0 8px;
+  padding: 14px;
+  background: var(--card);
+  border-radius: 16px;
+  width: min(320px, 100%);
+  text-align: left;
+  line-height: 1.8;
+}
+
+.dot {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  margin-right: 8px;
+  vertical-align: -2px;
+}
+
+.red { background: #ff5f6d; }
+.blue { background: #4a90ff; }
+.gold { background: #ffd84d; }
+.black { background: #454545; }
+
+.sound-toggle {
+  background: var(--card);
+  padding: 10px 14px;
+  border-radius: 999px;
+  font-size: 0.95rem;
+}
+
+.primary {
+  border: none;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #ff7db7, #ff5f91);
+  color: #fff;
+  font-size: 1.05rem;
+  font-weight: 700;
+  padding: 12px 24px;
+  box-shadow: 0 4px 0 #e75286;
+}
+
+.primary:active {
+  transform: translateY(2px);
+  box-shadow: 0 2px 0 #e75286;
+}
+
+#play-screen {
+  position: relative;
+}
+
+.hud {
+  z-index: 2;
+  display: flex;
+  justify-content: space-between;
+  font-size: 1rem;
+  font-weight: 700;
+  margin: 8px 4px;
+  padding: 10px 14px;
+  background: #ffffffd9;
+  border-radius: 12px;
+}
+
+.hud p {
+  margin: 0;
+}
+
+#game-canvas {
+  width: 100%;
+  flex: 1;
+  border-radius: 14px;
+  background:
+    radial-gradient(circle at 20% 20%, #ffffffaa 0 8%, transparent 9%),
+    radial-gradient(circle at 80% 12%, #ffffffaa 0 6%, transparent 7%),
+    linear-gradient(to bottom, #90dfff, #d4f5ff);
+  touch-action: none;
+}
