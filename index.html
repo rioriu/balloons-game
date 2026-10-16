@@ -17,7 +17,13 @@
           <li><span class="dot gold"></span>きん：5てん</li>
           <li><span class="dot black"></span>くろ：-1てん</li>
         </ul>
-        <p class="bird-hint">ときどき とりが とんでくるよ！<br />とりが わると 0てん。さきに タップしよう！</p>
+        <ul class="trick-list">
+          <li>とりを タップして おいはらおう！ とりが わると 0てん。</li>
+          <li>★にじいろ：5びょうかん、ぜんぶ にじいろ＆とくてん2ばい！ くろも ＋2てん。</li>
+          <li>つづけて わると コンボ！ 3こごとに ＋2てん。</li>
+          <li>かぜが ふくと、ふうせんが よこに ながれるよ。</li>
+          <li>おおきい ふうせん：3かい タップで ＋8てん＆かみふぶき！</li>
+        </ul>
         <label class="sound-toggle">
           <input id="sound-checkbox" type="checkbox" />
           おとをならす
@@ -30,6 +36,10 @@
           <p>のこり: <span id="time-value">30</span>びょう</p>
           <p>スコア: <span id="score-value">0</span></p>
         </header>
+        <div class="play-status">
+          <p id="effect-status" role="status"></p>
+          <p id="combo-status"></p>
+        </div>
         <canvas id="game-canvas" aria-label="ゲームキャンバス"></canvas>
       </section>
 

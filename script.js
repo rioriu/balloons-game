@@ -12,12 +12,17 @@ const timeValue = document.getElementById("time-value");
 const scoreValue = document.getElementById("score-value");
 const finalScore = document.getElementById("final-score");
 const resultMessage = document.getElementById("result-message");
+const effectStatus = document.getElementById("effect-status");
+const comboStatus = document.getElementById("combo-status");
 
 const canvas = document.getElementById("game-canvas");
 const ctx = canvas.getContext("2d");
 
 const GAME_DURATION = 30;
 const spawnIntervalMs = 800;
+const RAINBOW_DURATION = 5;
+const COMBO_WINDOW = 1.6;
+const rainbowColors = ["#ff5f6d", "#ffb347", "#ffe56b", "#66d9a0", "#4a90ff", "#ac83ef"];
 
 const balloonTypes = [
   { color: "#ff5f6d", points: 1, weight: 45 },
@@ -37,6 +42,16 @@ let lastFrame = 0;
 let timerId = null;
 let animationId = null;
 let running = false;
+let gameElapsed = 0;
+let rainbowUntil = 0;
+let combo = 0;
+let comboUntil = 0;
+let nextRainbowSpawn = 0;
+let nextGiantSpawn = 0;
+let nextWind = 0;
+let windUntil = 0;
+let windSpeed = 0;
+let floatingTexts = [];
 
 let audioCtx = null;
 let audioUnlocked = false;
@@ -64,12 +79,12 @@ function weightedType() {
   return balloonTypes[0];
 }
 
-function spawnBalloon() {
+function spawnBalloon(kind = "normal") {
   const type = weightedType();
-  const radius = 22 + Math.random() * 12;
+  const radius = kind === "giant" ? 48 : 22 + Math.random() * 12;
   const x = radius + Math.random() * (canvas.clientWidth - radius * 2);
   const y = canvas.clientHeight + radius + Math.random() * 40;
-  const speed = 22 + Math.random() * 20;
+  const speed = kind === "giant" ? 25 : 22 + Math.random() * 20;
 
   balloons.push({
     x,
@@ -77,8 +92,11 @@ function spawnBalloon() {
     radius,
     speed,
     swaySeed: Math.random() * Math.PI * 2,
-    color: type.color,
-    points: type.points,
+    color: kind === "giant" ? "#ff98c8" : type.color,
+    points: kind === "giant" ? 8 : kind === "rainbow" ? 3 : type.points,
+    kind,
+    hitsRemaining: kind === "giant" ? 3 : 1,
+    wobble: 0,
   });
 }
 
@@ -104,18 +122,51 @@ function spawnBird() {
     direction,
     speed,
     wingPhase: Math.random() * Math.PI * 2,
+    fleeing: false,
   });
+}
+
+function addFloatingText(x, y, text, color = "#24485c") {
+  floatingTexts.push({ x, y, text, color, life: 1 });
+}
+
+function updateStatus() {
+  const effects = [];
+  if (gameElapsed < rainbowUntil) effects.push(`にじいろ ×2！ あと${Math.ceil(rainbowUntil - gameElapsed)}びょう`);
+  if (gameElapsed < windUntil) effects.push(windSpeed > 0 ? "かぜ →" : "← かぜ");
+  const effectText = effects.join("　") || "とりを タップして おいはらおう！";
+  const comboText = combo > 1 ? `${combo}れんぞく！` : "つづけて タップ！";
+  if (effectStatus.textContent !== effectText) effectStatus.textContent = effectText;
+  if (comboStatus.textContent !== comboText) comboStatus.textContent = comboText;
 }
 
 function popBalloon(index, awardPoints = true) {
   const balloon = balloons[index];
+  const rainbow = gameElapsed < rainbowUntil || balloon.kind === "rainbow";
+  const points = rainbow ? Math.max(1, balloon.points) * 2 : balloon.points;
   if (awardPoints) {
-    score += balloon.points;
+    let bonus = 0;
+    if (points > 0) {
+      combo = gameElapsed <= comboUntil ? combo + 1 : 1;
+      comboUntil = gameElapsed + COMBO_WINDOW;
+      bonus = combo % 3 === 0 ? 2 : 0;
+    } else {
+      combo = 0;
+    }
+    score += points + bonus;
     scoreValue.textContent = String(score);
+    addFloatingText(balloon.x, balloon.y, `${points > 0 ? "+" : ""}${points}${bonus ? " ＋2ボーナス！" : ""}`,
+      points > 0 ? "#9a285b" : "#24485c");
+    if (balloon.kind === "rainbow") {
+      rainbowUntil = gameElapsed + RAINBOW_DURATION;
+      addFloatingText(canvas.clientWidth / 2, canvas.clientHeight * 0.3, "にじいろタイム！", "#713ab0");
+    }
   }
   createPopParticles(balloon.x, balloon.y, balloon.color);
-  playPopSound(awardPoints ? balloon.points : 0);
+  if (balloon.kind === "giant" || rainbow) createConfetti(balloon.x, balloon.y);
+  playPopSound(awardPoints ? points : 0);
   balloons.splice(index, 1);
+  updateStatus();
 }
 
 function birdHitsBalloon(bird, previousX, balloon) {
@@ -128,9 +179,14 @@ function birdHitsBalloon(bird, previousX, balloon) {
 }
 
 function update(deltaSec) {
+  gameElapsed += deltaSec;
+  if (combo > 0 && gameElapsed > comboUntil) combo = 0;
+  const wind = gameElapsed < windUntil ? windSpeed : 0;
   balloons.forEach((balloon) => {
     balloon.y -= balloon.speed * deltaSec;
-    balloon.x += Math.sin((performance.now() / 1000) * 2 + balloon.swaySeed) * 0.25;
+    balloon.x += (Math.sin(gameElapsed * 2 + balloon.swaySeed) * 15 + wind) * deltaSec;
+    balloon.x = Math.max(balloon.radius, Math.min(canvas.clientWidth - balloon.radius, balloon.x));
+    balloon.wobble = Math.max(0, balloon.wobble - deltaSec);
   });
   balloons = balloons.filter((balloon) => balloon.y + balloon.radius > -20);
 
@@ -138,13 +194,17 @@ function update(deltaSec) {
     const previousX = bird.x;
     bird.x += bird.direction * bird.speed * deltaSec;
     bird.wingPhase += deltaSec * 16;
+    if (bird.fleeing) {
+      bird.y -= 170 * deltaSec;
+      return;
+    }
     for (let i = balloons.length - 1; i >= 0; i -= 1) {
       if (birdHitsBalloon(bird, previousX, balloons[i])) {
         popBalloon(i, false);
       }
     }
   });
-  birds = birds.filter((bird) => bird.x > -60 && bird.x < canvas.clientWidth + 60);
+  birds = birds.filter((bird) => bird.x > -60 && bird.x < canvas.clientWidth + 60 && bird.y > -60);
 
   particles.forEach((p) => {
     p.life -= deltaSec;
@@ -153,6 +213,12 @@ function update(deltaSec) {
     p.vy += 90 * deltaSec;
   });
   particles = particles.filter((p) => p.life > 0);
+  floatingTexts.forEach((text) => {
+    text.life -= deltaSec;
+    text.y -= 32 * deltaSec;
+  });
+  floatingTexts = floatingTexts.filter((text) => text.life > 0);
+  updateStatus();
 }
 
 function drawBackgroundDecor() {
@@ -169,10 +235,18 @@ function drawBackgroundDecor() {
 }
 
 function drawBalloon(balloon) {
+  ctx.save();
+  if (balloon.wobble > 0) ctx.translate(Math.sin(balloon.wobble * 70) * 4, 0);
   const shineX = balloon.x - balloon.radius * 0.35;
   const shineY = balloon.y - balloon.radius * 0.35;
 
   ctx.fillStyle = balloon.color;
+  if (balloon.kind === "rainbow" || gameElapsed < rainbowUntil) {
+    const gradient = ctx.createLinearGradient(balloon.x - balloon.radius, balloon.y - balloon.radius,
+      balloon.x + balloon.radius, balloon.y + balloon.radius);
+    rainbowColors.forEach((color, i) => gradient.addColorStop(i / (rainbowColors.length - 1), color));
+    ctx.fillStyle = gradient;
+  }
   ctx.beginPath();
   ctx.ellipse(balloon.x, balloon.y, balloon.radius * 0.95, balloon.radius * 1.12, 0, 0, Math.PI * 2);
   ctx.fill();
@@ -195,15 +269,31 @@ function drawBalloon(balloon) {
     balloon.y + balloon.radius * 2.2
   );
   ctx.stroke();
+  if (balloon.kind === "giant" || balloon.kind === "rainbow") {
+    ctx.fillStyle = "#24485c";
+    ctx.font = `bold ${balloon.kind === "giant" ? 22 : 20}px sans-serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(balloon.kind === "giant" ? String(balloon.hitsRemaining) : "★", balloon.x, balloon.y);
+  }
+  ctx.restore();
 }
 
 function drawParticles() {
   particles.forEach((p) => {
-    ctx.globalAlpha = Math.max(0, p.life / 0.45);
+    ctx.globalAlpha = Math.min(1, Math.max(0, p.life / 0.45));
     ctx.fillStyle = p.color;
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-    ctx.fill();
+    if (p.confetti) {
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.rotate(p.life * p.spin);
+      ctx.fillRect(-p.size, -p.size / 2, p.size * 2, p.size);
+      ctx.restore();
+    } else {
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+      ctx.fill();
+    }
   });
   ctx.globalAlpha = 1;
 }
@@ -213,6 +303,7 @@ function drawBird(bird) {
   ctx.save();
   ctx.translate(bird.x, bird.y);
   ctx.scale(bird.direction, 1);
+  if (bird.fleeing) ctx.rotate(-0.35);
 
   // Tail, round body, and a flapping wing, all drawn without image assets.
   ctx.fillStyle = "#805747";
@@ -267,6 +358,36 @@ function draw() {
   balloons.forEach(drawBalloon);
   birds.forEach(drawBird);
   drawParticles();
+  drawWind();
+  ctx.save();
+  ctx.font = "bold 18px sans-serif";
+  ctx.textAlign = "center";
+  floatingTexts.forEach((text) => {
+    ctx.globalAlpha = Math.min(1, text.life * 2);
+    ctx.fillStyle = text.color;
+    const halfWidth = ctx.measureText(text.text).width / 2 + 6;
+    const x = Math.max(halfWidth, Math.min(canvas.clientWidth - halfWidth, text.x));
+    ctx.fillText(text.text, x, text.y);
+  });
+  ctx.restore();
+}
+
+function drawWind() {
+  if (gameElapsed >= windUntil) return;
+  ctx.save();
+  ctx.strokeStyle = "#ffffffb0";
+  ctx.lineWidth = 3;
+  ctx.lineCap = "round";
+  for (let i = 0; i < 8; i += 1) {
+    const width = canvas.clientWidth + 100;
+    const x = (((gameElapsed * windSpeed * 3 + i * 137) % width) + width) % width - 50;
+    const y = canvas.clientHeight * ((i + 0.5) / 8);
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x + Math.sign(windSpeed) * 45, y);
+    ctx.stroke();
+  }
+  ctx.restore();
 }
 
 function gameLoop(timestamp) {
@@ -288,6 +409,19 @@ function gameLoop(timestamp) {
   }
 
   update(deltaSec);
+  if (gameElapsed >= nextRainbowSpawn) {
+    spawnBalloon("rainbow");
+    nextRainbowSpawn = gameElapsed + 9 + Math.random() * 3;
+  }
+  if (gameElapsed >= nextGiantSpawn) {
+    spawnBalloon("giant");
+    nextGiantSpawn = gameElapsed + 9 + Math.random() * 3;
+  }
+  if (gameElapsed >= nextWind) {
+    windSpeed = (Math.random() < 0.5 ? -1 : 1) * (45 + Math.random() * 20);
+    windUntil = gameElapsed + 3;
+    nextWind = gameElapsed + 7 + Math.random() * 3;
+  }
   draw();
 
   animationId = requestAnimationFrame(gameLoop);
@@ -332,29 +466,64 @@ function createPopParticles(x, y, color) {
   }
 }
 
+function createConfetti(x, y) {
+  for (let i = 0; i < 38; i += 1) {
+    particles.push({ x, y, vx: (Math.random() - 0.5) * 260, vy: -80 - Math.random() * 160,
+      life: 1 + Math.random() * 0.5, size: 3 + Math.random() * 3,
+      color: rainbowColors[i % rainbowColors.length], confetti: true, spin: (Math.random() - 0.5) * 12 });
+  }
+}
+
+function unlockAudio() {
+  if (!soundCheckbox.checked) return;
+  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextClass) return;
+  if (!audioCtx) audioCtx = new AudioContextClass();
+  if (audioCtx.state === "suspended") audioCtx.resume().catch(() => {});
+  audioUnlocked = true;
+}
+
 function handlePointerDown(event) {
   event.preventDefault();
-
-  if (!audioUnlocked) {
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    audioUnlocked = true;
-  }
-
   if (!running) return;
+  unlockAudio();
 
   const rect = canvas.getBoundingClientRect();
   const x = event.clientX - rect.left;
   const y = event.clientY - rect.top;
 
+  // Birds are drawn in front of balloons, so a tap scares the bird first.
+  for (let i = birds.length - 1; i >= 0; i -= 1) {
+    const bird = birds[i];
+    if (!bird.fleeing && ((x - bird.x) / 36) ** 2 + ((y - bird.y) / 30) ** 2 <= 1) {
+      bird.fleeing = true;
+      bird.speed *= 2.2;
+      addFloatingText(bird.x, bird.y - 24, "びっくり！");
+      createPopParticles(bird.x, bird.y, "#fff");
+      playPopSound(1);
+      return;
+    }
+  }
+
   for (let i = balloons.length - 1; i >= 0; i -= 1) {
     const b = balloons[i];
     const dx = x - b.x;
     const dy = y - b.y;
-    if (dx * dx + dy * dy <= b.radius * b.radius) {
+    if ((dx / (b.radius * 0.95)) ** 2 + (dy / (b.radius * 1.12)) ** 2 <= 1) {
+      if (b.hitsRemaining > 1) {
+        b.hitsRemaining -= 1;
+        b.wobble = 0.25;
+        if (combo > 0) comboUntil = gameElapsed + COMBO_WINDOW;
+        addFloatingText(b.x, b.y, `あと${b.hitsRemaining}かい！`);
+        playPopSound(1);
+        return;
+      }
       popBalloon(i);
-      break;
+      return;
     }
   }
+  combo = 0;
+  updateStatus();
 }
 
 function tickTime() {
@@ -366,16 +535,29 @@ function tickTime() {
 }
 
 function startGame() {
+  if (running) return;
+  unlockAudio();
   score = 0;
   remainingTime = GAME_DURATION;
   balloons = [];
   birds = [];
   particles = [];
+  floatingTexts = [];
+  gameElapsed = 0;
+  rainbowUntil = 0;
+  combo = 0;
+  comboUntil = 0;
+  windUntil = 0;
+  windSpeed = 0;
+  nextRainbowSpawn = 3 + Math.random();
+  nextGiantSpawn = 6 + Math.random() * 2;
+  nextWind = 5 + Math.random() * 2;
   lastSpawn = 0;
   nextBirdSpawn = performance.now() + 4000 + Math.random() * 2000;
   lastFrame = 0;
   scoreValue.textContent = "0";
   timeValue.textContent = String(GAME_DURATION);
+  updateStatus();
 
   setScreen("play");
   resizeCanvas();
@@ -411,7 +593,7 @@ window.addEventListener("resize", () => {
 document.body.addEventListener(
   "touchmove",
   (event) => {
-    event.preventDefault();
+    if (running) event.preventDefault();
   },
   { passive: false }
 );
