@@ -97,6 +97,12 @@ h2 {
   font-size: 0.95rem;
 }
 
+.bird-hint {
+  margin: 0;
+  font-size: 0.9rem;
+  line-height: 1.6;
+}
+
 .primary {
   border: none;
   border-radius: 999px;

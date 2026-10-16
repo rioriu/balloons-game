@@ -29,8 +29,10 @@ const balloonTypes = [
 let score = 0;
 let remainingTime = GAME_DURATION;
 let balloons = [];
+let birds = [];
 let particles = [];
 let lastSpawn = 0;
+let nextBirdSpawn = 0;
 let lastFrame = 0;
 let timerId = null;
 let animationId = null;
@@ -80,12 +82,69 @@ function spawnBalloon() {
   });
 }
 
+function spawnBird() {
+  const direction = Math.random() < 0.5 ? 1 : -1;
+  const speed = Math.max(150, canvas.clientWidth / (3.5 + Math.random()));
+  const x = direction === 1 ? -45 : canvas.clientWidth + 45;
+  const visibleBalloons = balloons.filter((balloon) =>
+    balloon.y > balloon.radius + 40 && balloon.y < canvas.clientHeight - balloon.radius
+  );
+  let y = canvas.clientHeight * (0.2 + Math.random() * 0.6);
+
+  // Aim near a balloon's future position so birds can reach the rising balloons.
+  if (visibleBalloons.length > 0) {
+    const target = visibleBalloons[Math.floor(Math.random() * visibleBalloons.length)];
+    const travelTime = Math.abs(target.x - x) / speed;
+    y = target.y - target.speed * travelTime;
+  }
+
+  birds.push({
+    x,
+    y: Math.max(45, Math.min(canvas.clientHeight - 45, y)),
+    direction,
+    speed,
+    wingPhase: Math.random() * Math.PI * 2,
+  });
+}
+
+function popBalloon(index, awardPoints = true) {
+  const balloon = balloons[index];
+  if (awardPoints) {
+    score += balloon.points;
+    scoreValue.textContent = String(score);
+  }
+  createPopParticles(balloon.x, balloon.y, balloon.color);
+  playPopSound(awardPoints ? balloon.points : 0);
+  balloons.splice(index, 1);
+}
+
+function birdHitsBalloon(bird, previousX, balloon) {
+  // Sweep the bird's body across the frame to catch contacts between positions.
+  const nearestX = Math.max(Math.min(previousX, bird.x),
+    Math.min(balloon.x, Math.max(previousX, bird.x)));
+  const dx = (balloon.x - nearestX) / (balloon.radius * 0.95 + 25);
+  const dy = (balloon.y - bird.y) / (balloon.radius * 1.12 + 14);
+  return dx * dx + dy * dy <= 1;
+}
+
 function update(deltaSec) {
   balloons.forEach((balloon) => {
     balloon.y -= balloon.speed * deltaSec;
     balloon.x += Math.sin((performance.now() / 1000) * 2 + balloon.swaySeed) * 0.25;
   });
   balloons = balloons.filter((balloon) => balloon.y + balloon.radius > -20);
+
+  birds.forEach((bird) => {
+    const previousX = bird.x;
+    bird.x += bird.direction * bird.speed * deltaSec;
+    bird.wingPhase += deltaSec * 16;
+    for (let i = balloons.length - 1; i >= 0; i -= 1) {
+      if (birdHitsBalloon(bird, previousX, balloons[i])) {
+        popBalloon(i, false);
+      }
+    }
+  });
+  birds = birds.filter((bird) => bird.x > -60 && bird.x < canvas.clientWidth + 60);
 
   particles.forEach((p) => {
     p.life -= deltaSec;
@@ -149,10 +208,64 @@ function drawParticles() {
   ctx.globalAlpha = 1;
 }
 
+function drawBird(bird) {
+  const wingLift = Math.sin(bird.wingPhase) * 17;
+  ctx.save();
+  ctx.translate(bird.x, bird.y);
+  ctx.scale(bird.direction, 1);
+
+  // Tail, round body, and a flapping wing, all drawn without image assets.
+  ctx.fillStyle = "#805747";
+  ctx.beginPath();
+  ctx.moveTo(-12, 0);
+  ctx.lineTo(-32, -10);
+  ctx.lineTo(-28, 8);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.fillStyle = "#ba815a";
+  ctx.beginPath();
+  ctx.ellipse(-2, 2, 20, 13, -0.12, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#ffe1ad";
+  ctx.beginPath();
+  ctx.ellipse(2, 7, 12, 6, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = "#805747";
+  ctx.beginPath();
+  ctx.moveTo(3, 0);
+  ctx.quadraticCurveTo(-9, -15 + wingLift, -23, -10 + wingLift);
+  ctx.quadraticCurveTo(-15, 13, 3, 0);
+  ctx.fill();
+
+  ctx.fillStyle = "#ba815a";
+  ctx.beginPath();
+  ctx.arc(15, -7, 10, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#f5aa37";
+  ctx.beginPath();
+  ctx.moveTo(23, -10);
+  ctx.lineTo(34, -5);
+  ctx.lineTo(23, -2);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = "#263643";
+  ctx.beginPath();
+  ctx.arc(18, -9, 2.3, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#fff";
+  ctx.beginPath();
+  ctx.arc(18.6, -9.8, 0.8, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
 function draw() {
   ctx.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
   drawBackgroundDecor();
   balloons.forEach(drawBalloon);
+  birds.forEach(drawBird);
   drawParticles();
 }
 
@@ -161,12 +274,17 @@ function gameLoop(timestamp) {
 
   if (!lastFrame) lastFrame = timestamp;
   const deltaMs = timestamp - lastFrame;
-  const deltaSec = deltaMs / 1000;
+  const deltaSec = Math.min(deltaMs / 1000, 0.05);
   lastFrame = timestamp;
 
   if (timestamp - lastSpawn > spawnIntervalMs) {
     spawnBalloon();
     lastSpawn = timestamp;
+  }
+
+  if (timestamp >= nextBirdSpawn) {
+    spawnBird();
+    nextBirdSpawn = timestamp + 4000 + Math.random() * 3000;
   }
 
   update(deltaSec);
@@ -233,11 +351,7 @@ function handlePointerDown(event) {
     const dx = x - b.x;
     const dy = y - b.y;
     if (dx * dx + dy * dy <= b.radius * b.radius) {
-      score += b.points;
-      scoreValue.textContent = String(score);
-      createPopParticles(b.x, b.y, b.color);
-      playPopSound(b.points);
-      balloons.splice(i, 1);
+      popBalloon(i);
       break;
     }
   }
@@ -255,8 +369,10 @@ function startGame() {
   score = 0;
   remainingTime = GAME_DURATION;
   balloons = [];
+  birds = [];
   particles = [];
   lastSpawn = 0;
+  nextBirdSpawn = performance.now() + 4000 + Math.random() * 2000;
   lastFrame = 0;
   scoreValue.textContent = "0";
   timeValue.textContent = String(GAME_DURATION);
