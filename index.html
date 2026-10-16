@@ -11,6 +11,7 @@
       <section id="start-screen" class="screen active" aria-label="スタート画面">
         <h1>ふうせんポン</h1>
         <p class="subtitle">ふうせんをタップして、たくさん点をとろう！</p>
+        <p id="best-score" class="best-score"></p>
         <ul class="rule-list">
           <li><span class="dot red"></span>あか：1てん</li>
           <li><span class="dot blue"></span>あお：2てん</li>
@@ -28,7 +29,11 @@
           <input id="sound-checkbox" type="checkbox" />
           おとをならす
         </label>
+        <label class="player-field">なまえ（12もじまで）
+          <input id="player-name" type="text" maxlength="24" placeholder="プレイヤー" autocomplete="off" />
+        </label>
         <button id="start-button" class="primary">スタート</button>
+        <button id="start-ranking-button" class="secondary">ランキングを みる</button>
       </section>
 
       <section id="play-screen" class="screen" aria-label="プレイ画面">
@@ -47,10 +52,29 @@
         <h2>おしまい！</h2>
         <p class="result-score">さいしゅうスコア: <strong id="final-score">0</strong></p>
         <p id="result-message"></p>
+        <p id="record-message" role="status"></p>
         <button id="retry-button" class="primary">もういちど</button>
+        <button id="result-ranking-button" class="secondary">ランキングを みる</button>
+        <button id="result-home-button" class="secondary">タイトルへ</button>
+      </section>
+
+      <section id="ranking-screen" class="screen" aria-label="ランキング画面">
+        <h2 id="ranking-title" tabindex="-1">ランキング</h2>
+        <p id="ranking-scope" class="ranking-note"></p>
+        <p id="ranking-empty">まだ きろくが ないよ。あそんでみよう！</p>
+        <div id="ranking-table-wrap" class="ranking-table-wrap" hidden>
+          <table class="ranking-table">
+            <caption>スコア ベスト20</caption>
+            <thead><tr><th scope="col">じゅんい</th><th scope="col">なまえ・ひづけ</th><th scope="col">てんすう</th></tr></thead>
+            <tbody id="ranking-rows"></tbody>
+          </table>
+        </div>
+        <p id="ranking-storage-message" class="ranking-note" role="status"></p>
+        <button id="ranking-back-button" class="secondary">もどる</button>
       </section>
     </main>
 
+    <script src="scores.js"></script>
     <script src="script.js"></script>
   </body>
 </html>

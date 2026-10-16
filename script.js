@@ -2,6 +2,7 @@ const screens = {
   start: document.getElementById("start-screen"),
   play: document.getElementById("play-screen"),
   result: document.getElementById("result-screen"),
+  ranking: document.getElementById("ranking-screen"),
 };
 
 const startButton = document.getElementById("start-button");
@@ -14,6 +15,15 @@ const finalScore = document.getElementById("final-score");
 const resultMessage = document.getElementById("result-message");
 const effectStatus = document.getElementById("effect-status");
 const comboStatus = document.getElementById("combo-status");
+const playerNameInput = document.getElementById("player-name");
+const bestScore = document.getElementById("best-score");
+const recordMessage = document.getElementById("record-message");
+const rankingRows = document.getElementById("ranking-rows");
+const scoreStore = new ScoreStore();
+let currentPlayerName = "プレイヤー";
+let lastRecordId = null;
+let rankingReturnScreen = "start";
+playerNameInput.value = scoreStore.playerName;
 
 const canvas = document.getElementById("game-canvas");
 const ctx = canvas.getContext("2d");
@@ -59,6 +69,42 @@ let audioUnlocked = false;
 function setScreen(next) {
   Object.values(screens).forEach((screen) => screen.classList.remove("active"));
   screens[next].classList.add("active");
+}
+
+function updateBestScore() {
+  scoreStore.load();
+  bestScore.textContent = scoreStore.records.length ? `ベストスコア：${scoreStore.records[0].score}てん` : "めざせ！ はじめての きろく";
+}
+
+function showRanking(from) {
+  rankingReturnScreen = from;
+  const records = scoreStore.load();
+  rankingRows.replaceChildren();
+  for (const record of records) {
+    const row = document.createElement("tr");
+    if (record.id === lastRecordId) row.classList.add("latest-record");
+    const rank = document.createElement("td");
+    rank.textContent = `${records.filter(other => other.score > record.score).length + 1}い`;
+    const name = document.createElement("td");
+    const label = document.createElement("span");
+    label.textContent = `${record.name}${record.id === lastRecordId ? "（こんかい）" : ""}`;
+    const date = document.createElement("time");
+    date.dateTime = record.playedAt;
+    date.textContent = new Date(record.playedAt).toLocaleString("ja-JP", { year: "numeric", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
+    name.append(label, date);
+    const points = document.createElement("td");
+    points.textContent = `${record.score}てん`;
+    row.append(rank, name, points);
+    rankingRows.append(row);
+  }
+  document.getElementById("ranking-empty").hidden = records.length > 0;
+  document.getElementById("ranking-table-wrap").hidden = records.length === 0;
+  document.getElementById("ranking-scope").textContent = "この たんまつ・ブラウザの ランキングだよ。ほかの たんまつとは きょうゆうされないよ。";
+  document.getElementById("ranking-storage-message").textContent = scoreStore.persistent
+    ? "きろくは このブラウザに ほぞん。ブラウザのデータを けすと きろくも きえるよ。"
+    : "このブラウザでは ほぞんできません。ページを とじると きろくが きえることが あります。";
+  setScreen("ranking");
+  document.getElementById("ranking-title").focus();
 }
 
 function resizeCanvas() {
@@ -536,6 +582,8 @@ function tickTime() {
 
 function startGame() {
   if (running) return;
+  currentPlayerName = scoreStore.setPlayerName(playerNameInput.value);
+  playerNameInput.value = currentPlayerName;
   unlockAudio();
   score = 0;
   remainingTime = GAME_DURATION;
@@ -578,11 +626,28 @@ function endGame() {
   resultMessage.textContent =
     score >= 40 ? "すごい！ふうせんマスター！" : score >= 20 ? "じょうずにできたね！" : "またチャレンジしてみよう！";
 
+  const saved = scoreStore.addScore(score, currentPlayerName);
+  lastRecordId = saved.record.id;
+  recordMessage.textContent = saved.listed ? `${saved.rank}いに ランクイン！` : "こんかいは ランクインならず。ベスト20を めざそう！";
+  if (!saved.persistent) recordMessage.textContent += " このブラウザでは ほぞんできないため、いまだけの きろくだよ。";
+  updateBestScore();
+
   setScreen("result");
 }
 
 startButton.addEventListener("click", startGame);
 retryButton.addEventListener("click", startGame);
+playerNameInput.addEventListener("input", () => {
+  playerNameInput.value = Array.from(playerNameInput.value).slice(0, 12).join("");
+});
+document.getElementById("start-ranking-button").addEventListener("click", () => showRanking("start"));
+document.getElementById("result-ranking-button").addEventListener("click", () => showRanking("result"));
+document.getElementById("ranking-back-button").addEventListener("click", () => {
+  setScreen(rankingReturnScreen);
+  document.getElementById(rankingReturnScreen === "start" ? "start-ranking-button" : "result-ranking-button").focus();
+});
+document.getElementById("result-home-button").addEventListener("click", () => { updateBestScore(); setScreen("start"); startButton.focus(); });
+updateBestScore();
 canvas.addEventListener("pointerdown", handlePointerDown, { passive: false });
 window.addEventListener("resize", () => {
   if (screens.play.classList.contains("active")) {

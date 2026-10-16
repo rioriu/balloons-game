@@ -44,7 +44,8 @@ body {
 }
 
 #start-screen,
-#result-screen {
+#result-screen,
+#ranking-screen {
   align-items: center;
   justify-content: center;
   text-align: center;
@@ -52,14 +53,18 @@ body {
   padding: 20px;
 }
 
-#start-screen {
+#start-screen,
+#result-screen,
+#ranking-screen {
   overflow-y: auto;
   justify-content: flex-start;
   padding-block: 24px;
   touch-action: pan-y;
 }
 
-#start-screen > * {
+#start-screen > *,
+#result-screen > *,
+#ranking-screen > * {
   flex-shrink: 0;
 }
 
@@ -67,7 +72,7 @@ body {
   margin-top: auto;
 }
 
-#start-screen .primary {
+#start-ranking-button {
   margin-bottom: auto;
 }
 
@@ -82,6 +87,115 @@ h2 {
 .result-score,
 #result-message {
   margin: 0;
+}
+
+.best-score {
+  margin: 0;
+  color: #9a285b;
+  font-weight: 700;
+}
+
+.player-field {
+  display: grid;
+  gap: 6px;
+  width: min(280px, 100%);
+  font-size: 0.85rem;
+  text-align: left;
+}
+
+.player-field input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 2px solid #86bdcf;
+  border-radius: 12px;
+  background: #fff;
+  color: var(--text);
+  font: inherit;
+  font-size: 1rem;
+}
+
+.secondary {
+  border: 2px solid #7bb8cd;
+  border-radius: 999px;
+  padding: 10px 20px;
+  color: var(--text);
+  background: #fffffff0;
+  font: inherit;
+  font-weight: 700;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:focus-visible,
+input:focus-visible {
+  outline: 3px solid #74356d;
+  outline-offset: 3px;
+}
+
+#record-message {
+  margin: 0;
+  line-height: 1.6;
+  font-weight: 700;
+  color: #9a285b;
+}
+
+.ranking-note {
+  margin: 0;
+  max-width: 420px;
+  line-height: 1.6;
+  font-size: 0.85rem;
+}
+
+.ranking-table-wrap {
+  width: min(480px, 100%);
+  border-radius: 16px;
+  background: var(--card);
+  padding: 10px;
+}
+
+.ranking-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+  table-layout: fixed;
+}
+
+.ranking-table caption {
+  padding: 6px 0 12px;
+  font-weight: 700;
+}
+
+.ranking-table th,
+.ranking-table td {
+  padding: 10px 4px;
+  border-bottom: 1px solid #d6eaf0;
+  overflow-wrap: anywhere;
+}
+
+.ranking-table th:first-child {
+  width: 22%;
+}
+
+.ranking-table th:last-child {
+  width: 24%;
+}
+
+.ranking-table td:nth-child(2) {
+  text-align: left;
+}
+
+.ranking-table time {
+  display: block;
+  font-size: 0.7rem;
+  margin-top: 4px;
+  color: #517385;
+}
+
+.ranking-table .latest-record {
+  background: #fff0b7;
+  font-weight: 700;
 }
 
 .rule-list {

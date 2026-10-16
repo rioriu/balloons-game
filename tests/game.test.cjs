@@ -4,6 +4,7 @@ const fs = require("node:fs");
 const vm = require("node:vm");
 const path = require("node:path");
 const source = fs.readFileSync(path.join(__dirname, "../script.js"), "utf8");
+const scoresSource = fs.readFileSync(path.join(__dirname, "../scores.js"), "utf8");
 
 function game(width = 390, height = 650) {
   let now = 0;
@@ -19,16 +20,21 @@ function game(width = 390, height = 650) {
   function element(id) {
     if (!elements.has(id)) {
       const classes = new Set(id === "start-screen" ? ["active"] : []);
-      elements.set(id, { textContent: "", checked: false, clientWidth: width, clientHeight: height,
+      const children = [];
+      elements.set(id, { textContent: "", value: "", children, checked: false, clientWidth: width, clientHeight: height,
         classList: { add: x => classes.add(x), remove: x => classes.delete(x), contains: x => classes.has(x) },
-        addEventListener() {}, getContext: () => context,
+        addEventListener() {}, focus() {}, append(...items) { children.push(...items); },
+        replaceChildren(...items) { children.splice(0, children.length, ...items); }, getContext: () => context,
         getBoundingClientRect: () => ({ left: 0, top: 0, width, height }) });
     }
     return elements.get(id);
   }
-  const scope = vm.createContext({ document: { getElementById: element, body: { addEventListener() {} } },
-    window: { devicePixelRatio: 1, addEventListener() {} }, performance: { now: () => now },
+  let created = 0;
+  const storage = new Map();
+  const scope = vm.createContext({ document: { getElementById: element, createElement: () => element(`created-${created++}`), body: { addEventListener() {} } },
+    window: { devicePixelRatio: 1, addEventListener() {}, localStorage: { getItem: key => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value) } }, performance: { now: () => now },
     Math: math, setInterval: () => 1, clearInterval() {}, requestAnimationFrame: () => 1, cancelAnimationFrame() {} });
+  vm.runInContext(scoresSource, scope);
   vm.runInContext(source, scope);
   const run = text => vm.runInContext(text, scope);
   run("startGame()");
@@ -146,4 +152,27 @@ test("natural 30-second games schedule all events and draw safely at mobile and 
     assert.equal(g.run("score"), 0);
     assert.equal(g.run("balloons.every(b => Number.isFinite(b.x) && Number.isFinite(b.y))"), true);
   }
+});
+
+test("game over saves one named score and ranking navigation never duplicates it", () => {
+  const g = game();
+  g.run('currentPlayerName = "ユノ"; score = 42; endGame(); endGame(); showRanking("result")');
+  assert.equal(g.run("scoreStore.records.length"), 1);
+  assert.equal(g.run("scoreStore.records[0].score"), 42);
+  assert.equal(g.run("scoreStore.records[0].name"), "ユノ");
+  assert.equal(g.run("rankingRows.children.length"), 1);
+  assert.equal(g.run('screens.ranking.classList.contains("active")'), true);
+  g.run('showRanking("start"); showRanking("result")');
+  assert.equal(g.run("scoreStore.records.length"), 1);
+  assert.equal(g.run("rankingRows.children.length"), 1);
+  assert.equal(g.run("new ScoreStore().records[0].score"), 42);
+});
+
+test("ranking names are rendered as text and storage errors do not stop game over", () => {
+  const g = game();
+  g.run('currentPlayerName = "<img src=x>"; score = -2; scoreStore.getStorage = () => { throw Error("blocked"); }; endGame(); showRanking("result")');
+  assert.equal(g.run('screens.ranking.classList.contains("active")'), true);
+  assert.equal(g.run("scoreStore.records[0].score"), -2);
+  assert.equal(g.run("rankingRows.children[0].children[1].children[0].textContent"), "<img src=x>（こんかい）");
+  assert.equal(g.run("scoreStore.persistent"), false);
 });
