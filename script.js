@@ -32,6 +32,7 @@ const GAME_DURATION = 30;
 const spawnIntervalMs = 800;
 const RAINBOW_DURATION = 5;
 const COMBO_WINDOW = 1.6;
+const GROWTH_DURATION = 6;
 const rainbowColors = ["#ff5f6d", "#ffb347", "#ffe56b", "#66d9a0", "#4a90ff", "#ac83ef"];
 
 const balloonTypes = [
@@ -62,6 +63,7 @@ let nextWind = 0;
 let windUntil = 0;
 let windSpeed = 0;
 let floatingTexts = [];
+let spawnCount = 0;
 
 let audioCtx = null;
 let audioUnlocked = false;
@@ -127,15 +129,27 @@ function weightedType() {
 
 function spawnBalloon(kind = "normal") {
   const type = weightedType();
-  const radius = kind === "giant" ? 48 : 22 + Math.random() * 12;
-  const x = radius + Math.random() * (canvas.clientWidth - radius * 2);
-  const y = canvas.clientHeight + radius + Math.random() * 40;
-  const speed = kind === "giant" ? 25 : 22 + Math.random() * 20;
+  const radius = Math.min(kind === "giant" ? 44 : 22 + Math.random() * 8, canvas.clientWidth * 0.15);
+  // Alternate lower and side entrances so the middle is used in every game.
+  const fromSide = spawnCount % 2 === 0;
+  spawnCount += 1;
+  const direction = Math.random() < 0.5 ? 1 : -1;
+  const x = fromSide ? (direction === 1 ? -radius - 8 : canvas.clientWidth + radius + 8)
+    : radius + Math.random() * (canvas.clientWidth - radius * 2);
+  const y = fromSide ? canvas.clientHeight * (0.32 + Math.random() * 0.36)
+    : canvas.clientHeight + radius + Math.random() * 40;
+  const speed = fromSide ? 14 + Math.random() * 12 : kind === "giant" ? 25 : 22 + Math.random() * 20;
 
   balloons.push({
     x,
     y,
     radius,
+    baseRadius: radius,
+    age: 0,
+    growthFlash: 0,
+    entered: false,
+    fromSide,
+    velocityX: fromSide ? direction * Math.max(36, Math.min(90, canvas.clientWidth * 0.12)) : 0,
     speed,
     swaySeed: Math.random() * Math.PI * 2,
     color: kind === "giant" ? "#ff98c8" : type.color,
@@ -180,16 +194,26 @@ function updateStatus() {
   const effects = [];
   if (gameElapsed < rainbowUntil) effects.push(`にじいろ ×2！ あと${Math.ceil(rainbowUntil - gameElapsed)}びょう`);
   if (gameElapsed < windUntil) effects.push(windSpeed > 0 ? "かぜ →" : "← かぜ");
-  const effectText = effects.join("　") || "とりを タップして おいはらおう！";
+  const effectText = effects.join("　") || "そだてて ×4！ とりには きをつけよう！";
   const comboText = combo > 1 ? `${combo}れんぞく！` : "つづけて タップ！";
   if (effectStatus.textContent !== effectText) effectStatus.textContent = effectText;
   if (comboStatus.textContent !== comboText) comboStatus.textContent = comboText;
 }
 
+function growthMultiplier(balloon) {
+  return 1 + Math.floor(Math.min(balloon.age || 0, GROWTH_DURATION) / 2);
+}
+
+function balloonPoints(balloon) {
+  const rainbow = gameElapsed < rainbowUntil || balloon.kind === "rainbow";
+  if (balloon.points < 0 && !rainbow) return balloon.points;
+  return Math.max(1, balloon.points) * growthMultiplier(balloon) * (rainbow ? 2 : 1);
+}
+
 function popBalloon(index, awardPoints = true) {
   const balloon = balloons[index];
   const rainbow = gameElapsed < rainbowUntil || balloon.kind === "rainbow";
-  const points = rainbow ? Math.max(1, balloon.points) * 2 : balloon.points;
+  const points = balloonPoints(balloon);
   if (awardPoints) {
     let bonus = 0;
     if (points > 0) {
@@ -209,7 +233,7 @@ function popBalloon(index, awardPoints = true) {
     }
   }
   createPopParticles(balloon.x, balloon.y, balloon.color);
-  if (balloon.kind === "giant" || rainbow) createConfetti(balloon.x, balloon.y);
+  if (balloon.kind === "giant" || rainbow || (points > 0 && growthMultiplier(balloon) === 4)) createConfetti(balloon.x, balloon.y);
   playPopSound(awardPoints ? points : 0);
   balloons.splice(index, 1);
   updateStatus();
@@ -229,9 +253,30 @@ function update(deltaSec) {
   if (combo > 0 && gameElapsed > comboUntil) combo = 0;
   const wind = gameElapsed < windUntil ? windSpeed : 0;
   balloons.forEach((balloon) => {
+    const previousLevel = growthMultiplier(balloon);
+    balloon.baseRadius ??= balloon.radius;
+    if (balloon.entered) balloon.age = Math.min(GROWTH_DURATION, (balloon.age || 0) + deltaSec);
+    const growth = (balloon.age || 0) / GROWTH_DURATION;
+    balloon.radius = balloon.baseRadius * (1 + 1.1 * growth);
+    balloon.growthFlash = Math.max(0, (balloon.growthFlash || 0) - deltaSec);
+    if (growthMultiplier(balloon) > previousLevel && balloonPoints(balloon) > 0) {
+      balloon.growthFlash = 0.6;
+      addFloatingText(balloon.x, balloon.y - balloon.radius * 1.2,
+        growthMultiplier(balloon) === 4 ? "×4 MAX！" : `×${growthMultiplier(balloon)}に そだった！`, "#905510");
+    }
     balloon.y -= balloon.speed * deltaSec;
-    balloon.x += (Math.sin(gameElapsed * 2 + balloon.swaySeed) * 15 + wind) * deltaSec;
-    balloon.x = Math.max(balloon.radius, Math.min(canvas.clientWidth - balloon.radius, balloon.x));
+    balloon.x += ((balloon.velocityX || 0) + Math.sin(gameElapsed * 2 + balloon.swaySeed) * 15 +
+      (balloon.entered || !balloon.fromSide ? wind : 0)) * deltaSec;
+    if (balloon.entered || !balloon.fromSide) {
+      const left = balloon.radius;
+      const right = canvas.clientWidth - balloon.radius;
+      if (balloon.x < left || balloon.x > right) {
+        if (balloon.velocityX) balloon.velocityX = Math.abs(balloon.velocityX) * (balloon.x < left ? 1 : -1);
+        balloon.x = Math.max(left, Math.min(right, balloon.x));
+      }
+    }
+    if (!balloon.entered && balloon.x >= balloon.radius && balloon.x <= canvas.clientWidth - balloon.radius &&
+      balloon.y + balloon.radius <= canvas.clientHeight) balloon.entered = true;
     balloon.wobble = Math.max(0, balloon.wobble - deltaSec);
   });
   balloons = balloons.filter((balloon) => balloon.y + balloon.radius > -20);
@@ -285,6 +330,26 @@ function drawBalloon(balloon) {
   if (balloon.wobble > 0) ctx.translate(Math.sin(balloon.wobble * 70) * 4, 0);
   const shineX = balloon.x - balloon.radius * 0.35;
   const shineY = balloon.y - balloon.radius * 0.35;
+  const multiplier = growthMultiplier(balloon);
+  const points = balloonPoints(balloon);
+  const pulse = Math.sin(gameElapsed * 5 + balloon.swaySeed) * 0.5 + 0.5;
+
+  if (balloon.fromSide && (balloon.age || 0) < 1.2) {
+    ctx.strokeStyle = "#ffffffb0";
+    ctx.lineWidth = 3;
+    for (let i = 0; i < 3; i += 1) {
+      const behind = balloon.x - Math.sign(balloon.velocityX) * (balloon.radius + 12 + i * 12);
+      ctx.beginPath();
+      ctx.moveTo(behind, balloon.y + 12 + i * 8);
+      ctx.lineTo(behind - Math.sign(balloon.velocityX) * 14, balloon.y + 18 + i * 8);
+      ctx.stroke();
+    }
+  }
+
+  if (multiplier > 1 && points > 0) {
+    ctx.shadowColor = "#ffca38";
+    ctx.shadowBlur = 6 + multiplier * 4 + pulse * 5;
+  }
 
   ctx.fillStyle = balloon.color;
   if (balloon.kind === "rainbow" || gameElapsed < rainbowUntil) {
@@ -296,6 +361,7 @@ function drawBalloon(balloon) {
   ctx.beginPath();
   ctx.ellipse(balloon.x, balloon.y, balloon.radius * 0.95, balloon.radius * 1.12, 0, 0, Math.PI * 2);
   ctx.fill();
+  ctx.shadowBlur = 0;
 
   ctx.fillStyle = "#ffffffaa";
   ctx.beginPath();
@@ -315,14 +381,72 @@ function drawBalloon(balloon) {
     balloon.y + balloon.radius * 2.2
   );
   ctx.stroke();
+  // The live score uses the exact same calculation as popping the balloon.
+  const scoreText = `${points > 0 ? "+" : ""}${points}`;
+  ctx.font = `bold ${multiplier === 4 ? 20 : 17}px sans-serif`;
+  const badgeWidth = Math.max(23, ctx.measureText(scoreText).width / 2 + 9);
+  const badgeY = balloon.y + (balloon.kind === "normal" ? 0 : balloon.radius * 0.32);
+  ctx.fillStyle = "#fffffff2";
+  ctx.beginPath();
+  ctx.ellipse(balloon.x, badgeY, badgeWidth, 13, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = points > 0 ? "#8f2852" : "#24485c";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(scoreText, balloon.x, badgeY);
   if (balloon.kind === "giant" || balloon.kind === "rainbow") {
     ctx.fillStyle = "#24485c";
-    ctx.font = `bold ${balloon.kind === "giant" ? 22 : 20}px sans-serif`;
+    ctx.font = "bold 16px sans-serif";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText(balloon.kind === "giant" ? String(balloon.hitsRemaining) : "★", balloon.x, balloon.y);
+    ctx.fillText(balloon.kind === "giant" ? `あと${balloon.hitsRemaining}` : "★", balloon.x, balloon.y - balloon.radius * 0.32);
   }
+  if (points > 0) drawGrowthEffect(balloon, multiplier, pulse);
   ctx.restore();
+}
+
+function drawGrowthEffect(balloon, multiplier, pulse) {
+  const r = balloon.radius;
+  const progress = Math.min(1, (balloon.age || 0) / GROWTH_DURATION);
+  ctx.strokeStyle = "#ffffff88";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.ellipse(balloon.x, balloon.y, r * 1.08, r * 1.23, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.strokeStyle = multiplier === 4 ? "#ffe168" : "#fff8b0";
+  ctx.lineWidth = multiplier === 4 ? 4 : 3;
+  ctx.beginPath();
+  ctx.ellipse(balloon.x, balloon.y, r * 1.08, r * 1.23, 0, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * progress);
+  ctx.stroke();
+  if (multiplier > 1) {
+    ctx.fillStyle = "#fff9c7";
+    for (let i = 0; i < multiplier * 2; i += 1) {
+      const angle = gameElapsed * 0.8 + i * Math.PI / multiplier;
+      const x = balloon.x + Math.cos(angle) * r * (1.2 + pulse * 0.08);
+      const y = balloon.y + Math.sin(angle) * r * 1.36;
+      const size = 2 + pulse * 2;
+      ctx.fillRect(x - size, y - 1, size * 2, 2);
+      ctx.fillRect(x - 1, y - size, 2, size * 2);
+    }
+    ctx.font = "bold 15px sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#fff8b0";
+    ctx.strokeStyle = "#744516";
+    ctx.lineWidth = 3;
+    const text = multiplier === 4 ? "×4 MAX" : `×${multiplier}`;
+    const y = balloon.y - r * 1.3 - 8;
+    ctx.strokeText(text, balloon.x, y);
+    ctx.fillText(text, balloon.x, y);
+  }
+  if (balloon.growthFlash > 0) {
+    ctx.globalAlpha = balloon.growthFlash / 0.6;
+    ctx.strokeStyle = "#fff7a0";
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.arc(balloon.x, balloon.y, r * (1.2 + (0.6 - balloon.growthFlash)), 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
 }
 
 function drawParticles() {
@@ -592,6 +716,7 @@ function startGame() {
   particles = [];
   floatingTexts = [];
   gameElapsed = 0;
+  spawnCount = 0;
   rainbowUntil = 0;
   combo = 0;
   comboUntil = 0;

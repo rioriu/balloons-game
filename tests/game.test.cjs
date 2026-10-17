@@ -11,7 +11,8 @@ function game(width = 390, height = 650) {
   let seed = 12345;
   const math = Object.create(Math);
   math.random = () => ((seed = (seed * 16807) % 2147483647) - 1) / 2147483646;
-  const context = new Proxy({}, { get: (_, key) => {
+  const context = new Proxy({}, { get: (target, key) => {
+    if (key in target) return target[key];
     if (key === "createLinearGradient") return () => ({ addColorStop() {} });
     if (key === "measureText") return text => ({ width: text.length * 10 });
     return () => {};
@@ -42,7 +43,8 @@ function game(width = 390, height = 650) {
     tap() { run("handlePointerDown({preventDefault() {}, clientX: 150, clientY: 200})"); },
     balloon(kind = "normal", points = 1) {
       run(`balloons = [{x:150, y:200, radius:${kind === "giant" ? 48 : 28}, speed:0, swaySeed:0,
-        color:"red", points:${points}, kind:${JSON.stringify(kind)}, hitsRemaining:${kind === "giant" ? 3 : 1}, wobble:0}]`);
+        color:"red", points:${points}, kind:${JSON.stringify(kind)}, hitsRemaining:${kind === "giant" ? 3 : 1}, wobble:0,
+        baseRadius:${kind === "giant" ? 48 : 28}, age:0, entered:true, velocityX:0}]`);
     } };
 }
 
@@ -175,4 +177,82 @@ test("ranking names are rendered as text and storage errors do not stop game ove
   assert.equal(g.run("scoreStore.records[0].score"), -2);
   assert.equal(g.run("rankingRows.children[0].children[1].children[0].textContent"), "<img src=x>（こんかい）");
   assert.equal(g.run("scoreStore.persistent"), false);
+});
+
+test("balloons enter diagonally from both sides around mid-screen without snapping to the edge", () => {
+  const g = game();
+  const directions = new Set();
+  for (let i = 0; i < 40; i++) {
+    g.run('balloons = []; spawnBalloon()');
+    if (g.run('balloons[0].fromSide')) {
+      const x = g.run('balloons[0].x');
+      const y = g.run('balloons[0].y');
+      const direction = Math.sign(g.run('balloons[0].velocityX'));
+      directions.add(direction);
+      assert.ok(y >= 650 * 0.32 && y <= 650 * 0.68);
+      assert.ok(x < 0 || x > 390);
+      g.run('update(0.05)');
+      assert.ok(direction * (g.run('balloons[0].x') - x) > 0);
+      assert.ok(g.run('balloons[0].y') < y);
+      assert.ok(g.run('balloons[0].x') < 0 || g.run('balloons[0].x') > 390);
+      assert.equal(g.run('balloons[0].age'), 0);
+    } else {
+      assert.ok(g.run('balloons[0].y') > 650);
+    }
+  }
+  assert.deepEqual([...directions].sort(), [-1, 1]);
+});
+
+test("waiting grows size continuously and rewards at two-second steps, capped at four times", () => {
+  const g = game();
+  g.balloon("normal", 5);
+  const initial = g.run('balloons[0].radius');
+  for (const expected of [2, 3, 4]) {
+    g.run('update(2)');
+    assert.equal(g.run('balloonPoints(balloons[0])'), 5 * expected);
+    assert.ok(g.run('balloons[0].radius') > initial);
+    assert.ok(g.run('balloons[0].growthFlash') > 0);
+  }
+  const radius = g.run('balloons[0].radius');
+  g.run('update(10)');
+  assert.equal(g.run('balloons[0].radius'), radius);
+  assert.equal(g.run('balloonPoints(balloons[0])'), 20);
+  g.run('handlePointerDown({preventDefault(){}, clientX:balloons[0].x, clientY:balloons[0].y})');
+  assert.equal(g.run('score'), 20);
+  assert.ok(g.run('particles.some(p => p.confetti)'));
+});
+
+test("waiting is worth more than immediate popping and enlarged edges accept taps", () => {
+  const immediate = game(); immediate.balloon(); immediate.tap();
+  const grown = game(); grown.balloon(); grown.run('update(6)');
+  grown.run('handlePointerDown({preventDefault(){}, clientX:balloons[0].x + 45, clientY:balloons[0].y})');
+  assert.equal(grown.run('balloons.length'), 0);
+  assert.equal(grown.run('score'), immediate.run('score') * 4);
+});
+
+test("growth stacks with rainbow, giant, and combo while black stays minus one outside rainbow", () => {
+  const g = game();
+  g.balloon('normal', -1); g.run('update(6)');
+  assert.equal(g.run('balloonPoints(balloons[0])'), -1);
+  g.tap(); assert.equal(g.run('score'), -1);
+  g.balloon('giant', 8); g.run('update(6); rainbowUntil = gameElapsed + 5; combo = 2; comboUntil = gameElapsed + 1');
+  assert.equal(g.run('balloonPoints(balloons[0])'), 64);
+  g.tap(); g.tap(); g.tap();
+  assert.equal(g.run('score'), 65);
+});
+
+test("birds use the grown collision area and do not award growth points", () => {
+  const g = game(); g.balloon('normal', 5); g.run('update(6)');
+  g.run('birds = [{x:balloons[0].x + 60,y:balloons[0].y,direction:1,speed:0,wingPhase:0,fleeing:false}]; update(0)');
+  assert.equal(g.run('balloons.length'), 0);
+  assert.equal(g.run('score'), 0);
+});
+
+test("growth is rendered with the same live point value and pauses until the balloon fully enters", () => {
+  const g = game();
+  g.run('spawnBalloon(); update(0.05)');
+  assert.equal(g.run('balloons[0].age'), 0);
+  g.balloon('normal', 5); g.run('update(6); let labels = []; ctx.fillText = text => labels.push(text); drawBalloon(balloons[0])');
+  assert.ok(g.run('labels.includes("+20")'));
+  assert.ok(g.run('labels.includes("×4 MAX")'));
 });
