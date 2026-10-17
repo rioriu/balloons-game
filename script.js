@@ -32,6 +32,7 @@ const GAME_DURATION = 45;
 const spawnIntervalMs = 800;
 const RAINBOW_DURATION = 5;
 const COMBO_WINDOW = 1.6;
+const BIRD_WARNING_MS = 1200;
 const GROWTH_DURATION = 6;
 const rainbowColors = ["#ff5f6d", "#ffb347", "#ffe56b", "#66d9a0", "#4a90ff", "#ac83ef"];
 
@@ -46,6 +47,7 @@ let score = 0;
 let remainingTime = GAME_DURATION;
 let balloons = [];
 let birds = [];
+let birdWarning = null;
 let particles = [];
 let lastSpawn = 0;
 let nextBirdSpawn = 0;
@@ -160,7 +162,7 @@ function spawnBalloon(kind = "normal") {
   });
 }
 
-function spawnBird() {
+function createBird(leadTimeSec = 0) {
   const direction = Math.random() < 0.5 ? 1 : -1;
   const speed = Math.max(150, canvas.clientWidth / (3.5 + Math.random()));
   const x = direction === 1 ? -45 : canvas.clientWidth + 45;
@@ -173,17 +175,22 @@ function spawnBird() {
   if (visibleBalloons.length > 0) {
     const target = visibleBalloons[Math.floor(Math.random() * visibleBalloons.length)];
     const travelTime = Math.abs(target.x - x) / speed;
-    y = target.y - target.speed * travelTime;
+    y = target.y - target.speed * (travelTime + leadTimeSec);
   }
 
-  birds.push({
+  return {
     x,
     y: Math.max(45, Math.min(canvas.clientHeight - 45, y)),
     direction,
     speed,
     wingPhase: Math.random() * Math.PI * 2,
     fleeing: false,
-  });
+  };
+}
+
+function spawnBird() {
+  birds.push(birdWarning ? birdWarning.bird : createBird());
+  birdWarning = null;
 }
 
 function addFloatingText(x, y, text, color = "#24485c") {
@@ -540,6 +547,46 @@ function draw() {
     ctx.fillText(text.text, x, text.y);
   });
   ctx.restore();
+  drawBirdWarning();
+}
+
+function drawBirdWarning() {
+  if (!birdWarning) return;
+  const bird = birdWarning.bird;
+  const progress = Math.max(0, Math.min(1, (lastFrame - birdWarning.spawnAt + BIRD_WARNING_MS) / BIRD_WARNING_MS));
+  ctx.save();
+  for (let i = 0; i < 3; i += 1) {
+    const flutter = Math.sin(progress * 7 + i * 2);
+    const distance = 8 + progress * (52 + i * 13);
+    const x = bird.direction === 1 ? distance : canvas.clientWidth - distance;
+    const y = bird.y - 24 + i * 19 + progress * 30 + flutter * 7;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(bird.direction * (-0.55 + flutter * 0.45));
+    ctx.scale(0.55 + i * 0.08, 0.55 + i * 0.08);
+    ctx.globalAlpha = Math.min(0.9, progress * 5 + 0.15) * Math.min(1, (1 - progress) * 5);
+    ctx.fillStyle = "#fff0d6";
+    ctx.strokeStyle = "#967c5d";
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.moveTo(0, -14);
+    ctx.bezierCurveTo(12, -7, 8, 8, 0, 15);
+    ctx.bezierCurveTo(-8, 8, -7, -7, 0, -14);
+    ctx.fill();
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(0, -11);
+    ctx.lineTo(0, 19);
+    for (let j = -7; j <= 8; j += 5) {
+      ctx.moveTo(0, j + 3);
+      ctx.lineTo(5, j - 2);
+      ctx.moveTo(0, j + 3);
+      ctx.lineTo(-4, j - 1);
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
+  ctx.restore();
 }
 
 function drawWind() {
@@ -573,7 +620,10 @@ function gameLoop(timestamp) {
     lastSpawn = timestamp;
   }
 
-  if (timestamp >= nextBirdSpawn) {
+  if (!birdWarning && timestamp >= nextBirdSpawn - BIRD_WARNING_MS) {
+    birdWarning = { bird: createBird(BIRD_WARNING_MS / 1000), spawnAt: timestamp + BIRD_WARNING_MS };
+  }
+  if (birdWarning && timestamp >= birdWarning.spawnAt) {
     spawnBird();
     nextBirdSpawn = timestamp + 3000 + Math.random() * 2000;
   }
@@ -713,6 +763,7 @@ function startGame() {
   remainingTime = GAME_DURATION;
   balloons = [];
   birds = [];
+  birdWarning = null;
   particles = [];
   floatingTexts = [];
   gameElapsed = 0;

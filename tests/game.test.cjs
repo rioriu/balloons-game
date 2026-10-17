@@ -259,3 +259,36 @@ test("growth is rendered with the same live point value and pauses until the bal
   assert.ok(g.run('labels.includes("+20")'));
   assert.ok(g.run('labels.includes("×4 MAX")'));
 });
+
+test("feathers drift in without text or miniature birds, followed by a bird from that side and height", () => {
+  const g = game();
+  g.run('nextBirdSpawn = 3000');
+  g.frame(1800);
+  assert.equal(g.run('birds.length'), 0);
+  assert.equal(g.run('birdWarning !== null'), true);
+  const y = g.run('birdWarning.bird.y');
+  const direction = g.run('birdWarning.bird.direction');
+  g.run('let warningLabels = []; let approachDraws = 0; let featherFills = 0; const originalDrawBird = drawBird; drawBird = bird => { approachDraws++; originalDrawBird(bird); }; ctx.fill = () => featherFills++; ctx.fillText = text => warningLabels.push(text); drawBirdWarning()');
+  assert.equal(g.run('warningLabels.length'), 0);
+  assert.equal(g.run('approachDraws'), 0);
+  assert.equal(g.run('featherFills'), 3);
+  g.frame(2999);
+  assert.equal(g.run('birds.length'), 0);
+  g.frame(3000);
+  assert.equal(g.run('birds.length'), 1);
+  assert.equal(g.run('birds[0].y'), y);
+  assert.equal(g.run('birds[0].direction'), direction);
+  assert.equal(g.run('birdWarning'), null);
+  assert.ok(g.run('nextBirdSpawn') >= 6000 && g.run('nextBirdSpawn') <= 8000);
+});
+
+test("late frames still show a warning first and restart clears pending birds", () => {
+  const g = game();
+  g.run('nextBirdSpawn = 3000');
+  g.frame(5000);
+  assert.equal(g.run('birds.length'), 0);
+  assert.equal(g.run('birdWarning.spawnAt'), 6200);
+  g.run('endGame(); startGame()');
+  assert.equal(g.run('birdWarning'), null);
+  assert.equal(g.run('birds.length'), 0);
+});
