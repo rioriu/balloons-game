@@ -78,11 +78,11 @@ test("rainbow doubles rewards, makes black balloons positive, and expires after 
   g.balloon("rainbow", 3); g.tap();
   assert.equal(g.run("rainbowUntil"), 5);
   assert.equal(g.run("score"), 6);
-  g.balloon("normal", -1); g.tap();
+  g.balloon("normal", -10); g.tap();
   assert.equal(g.run("score"), 8);
   g.run("update(5.01)");
-  g.balloon("normal", -1); g.tap();
-  assert.equal(g.run("score"), 7);
+  g.balloon("normal", -10); g.tap();
+  assert.equal(g.run("score"), -2);
   assert.equal(g.run("combo"), 0);
 });
 
@@ -233,15 +233,15 @@ test("waiting is worth more than immediate popping and enlarged edges accept tap
   assert.equal(grown.run('score'), immediate.run('score') * 4);
 });
 
-test("growth stacks with rainbow, giant, and combo while black stays minus one outside rainbow", () => {
+test("black penalties grow to minus forty while positive growth, rainbow, and combo still stack", () => {
   const g = game();
-  g.balloon('normal', -1); g.run('update(6)');
-  assert.equal(g.run('balloonPoints(balloons[0])'), -1);
-  g.tap(); assert.equal(g.run('score'), -1);
+  g.balloon('normal', -10); g.run('update(6)');
+  assert.equal(g.run('balloonPoints(balloons[0])'), -40);
+  g.tap(); assert.equal(g.run('score'), -40);
   g.balloon('giant', 8); g.run('update(6); rainbowUntil = gameElapsed + 5; combo = 2; comboUntil = gameElapsed + 1');
   assert.equal(g.run('balloonPoints(balloons[0])'), 64);
   g.tap(); g.tap(); g.tap();
-  assert.equal(g.run('score'), 65);
+  assert.equal(g.run('score'), 26);
 });
 
 test("birds use the grown collision area and do not award growth points", () => {
@@ -291,4 +291,29 @@ test("late frames still show a warning first and restart clears pending birds", 
   g.run('endGame(); startGame()');
   assert.equal(g.run('birdWarning'), null);
   assert.equal(g.run('birds.length'), 0);
+});
+
+test("black balloons start at minus ten and show growing penalties without celebration", () => {
+  const g = game();
+  assert.equal(g.run('balloonTypes.find(type => type.color === "#454545").points'), -10);
+  g.balloon('normal', -10);
+  for (const [age, points] of [[0,-10],[2,-20],[4,-30],[6,-40]]) {
+    g.run(`balloons[0].age = ${age}`);
+    assert.equal(g.run('balloonPoints(balloons[0])'), points);
+  }
+  g.run('let penaltyLabels = []; ctx.fillText = text => penaltyLabels.push(text); drawBalloon(balloons[0])');
+  assert.ok(g.run('penaltyLabels.includes("-40")'));
+  g.run('combo = 5; popBalloon(0)');
+  assert.equal(g.run('score'), -40);
+  assert.equal(g.run('combo'), 0);
+  assert.equal(g.run('particles.some(p => p.confetti)'), false);
+});
+
+test("fully grown black balloons become positive in rainbow time and return to minus forty afterward", () => {
+  const g = game();
+  g.balloon('normal', -10);
+  g.run('balloons[0].age = 6; rainbowUntil = 5');
+  assert.equal(g.run('balloonPoints(balloons[0])'), 8);
+  g.run('gameElapsed = 5');
+  assert.equal(g.run('balloonPoints(balloons[0])'), -40);
 });

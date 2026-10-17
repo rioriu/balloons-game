@@ -40,7 +40,7 @@ const balloonTypes = [
   { color: "#ff5f6d", points: 1, weight: 45 },
   { color: "#4a90ff", points: 2, weight: 30 },
   { color: "#ffd84d", points: 5, weight: 15 },
-  { color: "#454545", points: -1, weight: 10 },
+  { color: "#454545", points: -10, weight: 10 },
 ];
 
 let score = 0;
@@ -213,7 +213,7 @@ function growthMultiplier(balloon) {
 
 function balloonPoints(balloon) {
   const rainbow = gameElapsed < rainbowUntil || balloon.kind === "rainbow";
-  if (balloon.points < 0 && !rainbow) return balloon.points;
+  if (balloon.points < 0 && !rainbow) return balloon.points * growthMultiplier(balloon);
   return Math.max(1, balloon.points) * growthMultiplier(balloon) * (rainbow ? 2 : 1);
 }
 
@@ -266,10 +266,12 @@ function update(deltaSec) {
     const growth = (balloon.age || 0) / GROWTH_DURATION;
     balloon.radius = balloon.baseRadius * (1 + 1.1 * growth);
     balloon.growthFlash = Math.max(0, (balloon.growthFlash || 0) - deltaSec);
-    if (growthMultiplier(balloon) > previousLevel && balloonPoints(balloon) > 0) {
+    if (growthMultiplier(balloon) > previousLevel) {
       balloon.growthFlash = 0.6;
-      addFloatingText(balloon.x, balloon.y - balloon.radius * 1.2,
-        growthMultiplier(balloon) === 4 ? "×4 MAX！" : `×${growthMultiplier(balloon)}に そだった！`, "#905510");
+      if (balloonPoints(balloon) > 0) {
+        addFloatingText(balloon.x, balloon.y - balloon.radius * 1.2,
+          growthMultiplier(balloon) === 4 ? "×4 MAX！" : `×${growthMultiplier(balloon)}に そだった！`, "#905510");
+      }
     }
     balloon.y -= balloon.speed * deltaSec;
     balloon.x += ((balloon.velocityX || 0) + Math.sin(gameElapsed * 2 + balloon.swaySeed) * 15 +
@@ -353,8 +355,8 @@ function drawBalloon(balloon) {
     }
   }
 
-  if (multiplier > 1 && points > 0) {
-    ctx.shadowColor = "#ffca38";
+  if (multiplier > 1) {
+    ctx.shadowColor = points < 0 ? "#d95079" : "#ffca38";
     ctx.shadowBlur = 6 + multiplier * 4 + pulse * 5;
   }
 
@@ -393,11 +395,11 @@ function drawBalloon(balloon) {
   ctx.font = `bold ${multiplier === 4 ? 20 : 17}px sans-serif`;
   const badgeWidth = Math.max(23, ctx.measureText(scoreText).width / 2 + 9);
   const badgeY = balloon.y + (balloon.kind === "normal" ? 0 : balloon.radius * 0.32);
-  ctx.fillStyle = "#fffffff2";
+  ctx.fillStyle = points < 0 ? "#ffe1eaf2" : "#fffffff2";
   ctx.beginPath();
   ctx.ellipse(balloon.x, badgeY, badgeWidth, 13, 0, 0, Math.PI * 2);
   ctx.fill();
-  ctx.fillStyle = points > 0 ? "#8f2852" : "#24485c";
+  ctx.fillStyle = points > 0 ? "#8f2852" : "#962848";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.fillText(scoreText, balloon.x, badgeY);
@@ -408,26 +410,27 @@ function drawBalloon(balloon) {
     ctx.textBaseline = "middle";
     ctx.fillText(balloon.kind === "giant" ? `あと${balloon.hitsRemaining}` : "★", balloon.x, balloon.y - balloon.radius * 0.32);
   }
-  if (points > 0) drawGrowthEffect(balloon, multiplier, pulse);
+  drawGrowthEffect(balloon, multiplier, pulse);
   ctx.restore();
 }
 
 function drawGrowthEffect(balloon, multiplier, pulse) {
   const r = balloon.radius;
   const progress = Math.min(1, (balloon.age || 0) / GROWTH_DURATION);
+  const penalty = balloonPoints(balloon) < 0;
   ctx.strokeStyle = "#ffffff88";
   ctx.lineWidth = 2;
   ctx.beginPath();
   ctx.ellipse(balloon.x, balloon.y, r * 1.08, r * 1.23, 0, 0, Math.PI * 2);
   ctx.stroke();
-  ctx.strokeStyle = multiplier === 4 ? "#ffe168" : "#fff8b0";
+  ctx.strokeStyle = penalty ? "#ef87a3" : multiplier === 4 ? "#ffe168" : "#fff8b0";
   ctx.lineWidth = multiplier === 4 ? 4 : 3;
   ctx.beginPath();
   ctx.ellipse(balloon.x, balloon.y, r * 1.08, r * 1.23, 0, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * progress);
   ctx.stroke();
   if (multiplier > 1) {
     ctx.fillStyle = "#fff9c7";
-    for (let i = 0; i < multiplier * 2; i += 1) {
+    for (let i = 0; !penalty && i < multiplier * 2; i += 1) {
       const angle = gameElapsed * 0.8 + i * Math.PI / multiplier;
       const x = balloon.x + Math.cos(angle) * r * (1.2 + pulse * 0.08);
       const y = balloon.y + Math.sin(angle) * r * 1.36;
@@ -437,8 +440,8 @@ function drawGrowthEffect(balloon, multiplier, pulse) {
     }
     ctx.font = "bold 15px sans-serif";
     ctx.textAlign = "center";
-    ctx.fillStyle = "#fff8b0";
-    ctx.strokeStyle = "#744516";
+    ctx.fillStyle = penalty ? "#ffe1ea" : "#fff8b0";
+    ctx.strokeStyle = penalty ? "#7c2945" : "#744516";
     ctx.lineWidth = 3;
     const text = multiplier === 4 ? "×4 MAX" : `×${multiplier}`;
     const y = balloon.y - r * 1.3 - 8;
@@ -447,7 +450,7 @@ function drawGrowthEffect(balloon, multiplier, pulse) {
   }
   if (balloon.growthFlash > 0) {
     ctx.globalAlpha = balloon.growthFlash / 0.6;
-    ctx.strokeStyle = "#fff7a0";
+    ctx.strokeStyle = penalty ? "#ef87a3" : "#fff7a0";
     ctx.lineWidth = 4;
     ctx.beginPath();
     ctx.arc(balloon.x, balloon.y, r * (1.2 + (0.6 - balloon.growthFlash)), 0, Math.PI * 2);
