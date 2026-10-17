@@ -28,7 +28,7 @@ playerNameInput.value = scoreStore.playerName;
 const canvas = document.getElementById("game-canvas");
 const ctx = canvas.getContext("2d");
 
-const GAME_DURATION = 30;
+const GAME_DURATION = 45;
 const spawnIntervalMs = 800;
 const RAINBOW_DURATION = 5;
 const COMBO_WINDOW = 1.6;
@@ -575,7 +575,7 @@ function gameLoop(timestamp) {
 
   if (timestamp >= nextBirdSpawn) {
     spawnBird();
-    nextBirdSpawn = timestamp + 4000 + Math.random() * 3000;
+    nextBirdSpawn = timestamp + 3000 + Math.random() * 2000;
   }
 
   update(deltaSec);
@@ -726,7 +726,7 @@ function startGame() {
   nextGiantSpawn = 6 + Math.random() * 2;
   nextWind = 5 + Math.random() * 2;
   lastSpawn = 0;
-  nextBirdSpawn = performance.now() + 4000 + Math.random() * 2000;
+  nextBirdSpawn = performance.now() + 3000 + Math.random() * 1500;
   lastFrame = 0;
   scoreValue.textContent = "0";
   timeValue.textContent = String(GAME_DURATION);

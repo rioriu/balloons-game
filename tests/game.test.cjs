@@ -131,20 +131,23 @@ test("wind moves balloons in either direction, keeps them onscreen, and expires"
   }
 });
 
-test("restart clears every effect and the 30-second timer ends the game", () => {
+test("restart clears every effect and the 45-second timer ends the game", () => {
   const g = game();
   g.run("rainbowUntil = 99; combo = 12; windUntil = 99; windSpeed = 60; floatingTexts = [{}]; endGame(); startGame()");
   assert.equal(g.run("rainbowUntil === 0 && combo === 0 && windUntil === 0 && windSpeed === 0 && floatingTexts.length === 0 && gameElapsed === 0"), true);
-  for (let i = 0; i < 30; i++) g.run("tickTime()");
+  for (let i = 0; i < 44; i++) g.run("tickTime()");
+  assert.equal(g.run("running"), true);
+  assert.equal(g.run("remainingTime"), 1);
+  g.run("tickTime()");
   assert.equal(g.run("running"), false);
   assert.equal(g.run('screens.result.classList.contains("active")'), true);
 });
 
-test("natural 30-second games schedule all events and draw safely at mobile and desktop widths", () => {
+test("natural 45-second games schedule all events and draw safely at mobile and desktop widths", () => {
   for (const width of [320, 390, 1280]) {
     const g = game(width);
     g.run('let kinds = []; const originalSpawn = spawnBalloon; spawnBalloon = (kind = "normal") => { kinds.push(kind); originalSpawn(kind); }; let gusts = 0; let previousWind = 0;');
-    for (let time = 16; time < 30000; time += 16) {
+    for (let time = 16; time < 45000; time += 16) {
       g.frame(time);
       g.run("if (windUntil !== previousWind) { gusts++; previousWind = windUntil; }");
     }
